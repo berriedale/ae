@@ -7,25 +7,27 @@ import re
 import sys
 import yaml
 
+CACHE_DIR = os.path.join(os.path.abspath(os.path.curdir), '.ae')
+ROOT_DIR = os.path.join(CACHE_DIR, 'root')
+# We'll need these everywhere basically
+os.putenv('SCHEMATIC_INSTALL_PREFIX', ROOT_DIR)
+os.putenv('SCHEMATIC_PARALLELISM', '1')
+
 class SchematicHandler:
     def __init__(self, schematic):
         self.schematic = schematic
         self.name = schematic['name']
-        self.cache_dir = os.path.join(os.path.abspath(os.path.curdir), '.ae')
-        self.root_dir = os.path.join(self.cache_dir, 'root')
 
     def bootstrap(self):
-        if not os.path.isdir(self.cache_dir):
-            os.mkdir(self.cache_dir)
-        os.putenv('SCHEMATIC_INSTALL_PREFIX', self.root_dir)
-        os.putenv('SCHEMATIC_PARALLELISM', '1')
+        if not os.path.isdir(CACHE_DIR):
+            os.mkdir(CACHE_DIR)
         return self
 
     def checkout(self):
         print '>> checkout'
         url = self.schematic['source']['url']
         branch = self.schematic['source']['ref'] or 'master'
-        repos_dir = os.path.join(self.cache_dir, 'repos')
+        repos_dir = os.path.join(CACHE_DIR, 'repos')
         self.checkout_dir = os.path.join(repos_dir, self.name)
 
         if not os.path.isdir(repos_dir):
@@ -116,16 +118,50 @@ def install():
 
     # XXX: really should be walking the dependncy graph first
     for schematic in todo:
-        print "Should install %s" % schematic
+        print "Installing schematic %s" % schematic
         handler = todo[schematic]
         handler.bootstrap().checkout().prepare().build().install()
     return 0
+
+def run():
+    if len(sys.argv) < 3:
+        print "Must specify a command to run"
+        return -1
+    env = {}
+    for e in os.environ:
+        env[e] = os.environ[e]
+
+    project_path = os.path.join(ROOT_DIR, 'lib', 'gnat')
+    key = 'ADA_PROJECT_PATH'
+
+    if os.environ.has_key(key):
+        env[key] = ':'.join([project_path, os.environ[key]])
+    else:
+        env[key] = project_path
+
+    key = 'GPR_PROJECT_PATH'
+    if os.environ.has_key(key):
+        env[key] = ':'.join([project_path, os.environ[key]])
+    else:
+        env[key] = project_path
+
+    key = 'ADA_INCLUDE_PATH'
+
+    include_path = os.path.join(ROOT_DIR, 'include')
+    if os.environ.has_key(key):
+        env[key] = ':'.join([include_path, os.environ[key]])
+    else:
+        env[key] = include_path
+
+    return os.execvpe(sys.argv[2], sys.argv[2:], env)
 
 
 def main():
     if len(sys.argv) > 1:
         if sys.argv[1] == 'install':
             sys.exit(install())
+        if sys.argv[1] == 'run':
+            sys.exit(run())
     else:
         print "Welcome to the Analytical Engine"
 
