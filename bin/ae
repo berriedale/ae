@@ -80,7 +80,9 @@ def traverse_schematic_graph(graph, key=None):
     if not key:
         install = []
         for key in graph.iterkeys():
-            install.append(traverse_schematic_graph(graph, key))
+            result = traverse_schematic_graph(graph, key)
+            if result:
+                install.append(result)
             install.append(key)
         return install
     if not graph.has_key(key):
