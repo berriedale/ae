@@ -130,6 +130,9 @@ def run():
     env = {}
     for e in os.environ:
         env[e] = os.environ[e]
+    # Put our own ROOT_DIR bits in the path first to make sure `ae run` can execute
+    # schematic installed binaries
+    env['PATH'] = ':'.join([os.path.join(ROOT_DIR, 'bin'), os.environ['PATH']])
 
     project_path = os.path.join(ROOT_DIR, 'lib', 'gnat')
     key = 'ADA_PROJECT_PATH'
@@ -152,7 +155,6 @@ def run():
         env[key] = ':'.join([include_path, os.environ[key]])
     else:
         env[key] = include_path
-
     return os.execvpe(sys.argv[2], sys.argv[2:], env)
 
 
