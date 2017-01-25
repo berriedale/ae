@@ -1,0 +1,4 @@
+= Analytical Engine
+
+The Analytical Engine (`ae`) is a Ada dependency management tool intended to
+make working with Ada project dependencies easier.
