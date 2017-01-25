@@ -1,0 +1,4 @@
+catalogs:
+  - file:///home/tyler/source/github/berriedale/schematics
+schematics:
+  - gtkada
