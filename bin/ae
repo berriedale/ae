@@ -12,6 +12,9 @@ ROOT_DIR = os.path.join(CACHE_DIR, 'root')
 # We'll need these everywhere basically
 os.putenv('SCHEMATIC_INSTALL_PREFIX', ROOT_DIR)
 os.putenv('SCHEMATIC_PARALLELISM', '1')
+# Put our own ROOT_DIR bits in the path first to make sure `ae run` can execute
+# schematic installed binaries
+os.environ['PATH'] = os.pathsep.join([os.path.join(ROOT_DIR, 'bin'), os.environ['PATH']])
 
 class SchematicHandler:
     def __init__(self, schematic):
@@ -73,6 +76,20 @@ class SchematicHandler:
             sys.stdout.flush()
 
 
+def traverse_schematic_graph(graph, key=None):
+    if not key:
+        install = []
+        for key in graph.iterkeys():
+            install.append(traverse_schematic_graph(graph, key))
+            install.append(key)
+        return install
+    if not graph.has_key(key):
+        return key
+    for key in graph[key]:
+        return traverse_schematic_graph(graph, key)
+
+
+
 class FileCatalog:
     def __init__(self, uri):
         self.uri = uri
@@ -110,17 +127,35 @@ def install():
 
     graph = {}
     todo = {}
+    dependencies = []
     for schematic in schematics['schematics']:
         for catalog in catalogs:
+            graph[schematic] = []
             s = catalog.has_schematic(schematic)
-            if s:
-                todo[schematic] = SchematicHandler(s)
+            if not s:
+                print "!!! Could not find schematic for %s !!!" % schematic
+                return 1
+            todo[schematic] = SchematicHandler(s)
+            depends = s['schematics'] or []
+            graph[schematic].extend(depends)
+            dependencies.extend(depends)
 
-    # XXX: really should be walking the dependncy graph first
-    for schematic in todo:
+    for schematic in dependencies:
+        for catalog in catalogs:
+            s = catalog.has_schematic(schematic)
+            if not s:
+                print "!!! Could not find schematic for %s !!!" % schematic
+                return 1
+            todo[schematic] = SchematicHandler(s)
+            depends = s['schematics'] or []
+            for d in depends:
+                if not graph.has_key(d):
+                    graph[d] = []
+                graph[d].append(schematic)
+
+    for schematic in traverse_schematic_graph(graph):
         print "Installing schematic %s" % schematic
-        handler = todo[schematic]
-        handler.bootstrap().checkout().prepare().build().install()
+        todo[schematic].bootstrap().checkout().prepare().build().install()
     return 0
 
 def run():
@@ -130,9 +165,6 @@ def run():
     env = {}
     for e in os.environ:
         env[e] = os.environ[e]
-    # Put our own ROOT_DIR bits in the path first to make sure `ae run` can execute
-    # schematic installed binaries
-    env['PATH'] = ':'.join([os.path.join(ROOT_DIR, 'bin'), os.environ['PATH']])
 
     project_path = os.path.join(ROOT_DIR, 'lib', 'gnat')
     key = 'ADA_PROJECT_PATH'
