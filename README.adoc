@@ -2,3 +2,41 @@
 
 The Analytical Engine (`ae`) is a Ada dependency management tool intended to
 make working with Ada project dependencies easier.
+
+
+== schematics.yaml
+
+[source,yaml]
+----
+catalogs:
+  - builtin://berriedale
+schematics:
+  - gtkada
+----
+
+
+== `ae` tool
+
+=== Installing schematics
+
+[source, bash]
+----
+% ae install
+----
+
+
+=== Using dependencies
+
+The subcommand `run` can be used to provide the appropriate environment
+variables for executing a program such that it can access installed schematics.
+
+[source, bash]
+----
+% ae run gprbuild
+----
+
+
+== .aerc
+
+The .aerc should be added to specific projects to override user-specific
+settings. Generally speaking these files should never be checked in.
