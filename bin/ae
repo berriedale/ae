@@ -100,13 +100,19 @@ class FileCatalog:
     def load(self):
         path = re.split('file:\/\/', self.uri)[1]
         catalog_dir = os.path.join(path, 'catalog')
-        if os.path.isdir(catalog_dir):
-            for schematic in os.listdir(catalog_dir):
-                if not schematic.endswith('.yaml'):
+        if not os.path.isdir(catalog_dir):
+            return
+
+        for root, dirs, files in os.walk(catalog_dir):
+            for f in files:
+                if not f.endswith('.yaml'):
                     continue
-                name = re.sub('\.yaml', '', schematic)
-                schematic = os.path.join(catalog_dir, schematic)
-                self.schematics[name] = yaml.load(file(schematic))
+                publisher = os.path.basename(root)
+                name = re.sub('\.yaml', '', f)
+                qualified_name = '/'.join([publisher, name])
+
+                self.schematics[qualified_name] = yaml.load(file(os.path.join(root, f)))
+
 
     def has_schematic(self, schematic):
         if self.schematics.has_key(schematic):
