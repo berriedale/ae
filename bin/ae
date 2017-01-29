@@ -16,6 +16,15 @@ os.putenv('SCHEMATIC_PARALLELISM', '1')
 # schematic installed binaries
 os.environ['PATH'] = os.pathsep.join([os.path.join(ROOT_DIR, 'bin'), os.environ['PATH']])
 
+def read_pipe(name, pipe):
+    while True:
+        line = pipe.readline()
+        if not line:
+            break
+        sys.stdout.write("[%s] %s" % (name, line))
+        sys.stdout.flush()
+
+
 class SchematicHandler:
     def __init__(self, schematic):
         self.schematic = schematic
@@ -41,8 +50,8 @@ class SchematicHandler:
         else:
             command = "cd %s && git fetch" % (self.checkout_dir)
 
-        self.__readpipe__(os.popen(command))
-        self.__readpipe__(os.popen("cd %s && git checkout origin/%s" % (self.checkout_dir, branch)))
+        read_pipe(self.name, os.popen(command))
+        read_pipe(self.name, os.popen("cd %s && git checkout origin/%s" % (self.checkout_dir, branch)))
         return self
 
     def prepare(self):
@@ -65,15 +74,8 @@ class SchematicHandler:
 
     def __run_steps__(self, steps):
         for s in steps:
-            self.__readpipe__(os.popen("cd %s && %s" % (self.checkout_dir, s)))
-
-    def __readpipe__(self, pipe):
-        while True:
-            line = pipe.readline()
-            if not line:
-                break
-            sys.stdout.write("[%s] %s" % (self.name, line))
-            sys.stdout.flush()
+            read_pipe(self.name,
+                    os.popen("cd %s && %s" % (self.checkout_dir, s)))
 
 
 def traverse_schematic_graph(graph, key=None):
@@ -90,13 +92,18 @@ def traverse_schematic_graph(graph, key=None):
     for key in graph[key]:
         return traverse_schematic_graph(graph, key)
 
-
-
-class FileCatalog:
+class Catalog(object):
     def __init__(self, uri):
         self.uri = uri
         self.schematics = {}
 
+    def has_schematic(self, schematic):
+        if self.schematics.has_key(schematic):
+            return self.schematics[schematic]
+        return None
+
+
+class FileCatalog(Catalog):
     def load(self):
         path = re.split('file:\/\/', self.uri)[1]
         catalog_dir = os.path.join(path, 'catalog')
@@ -114,13 +121,23 @@ class FileCatalog:
                 self.schematics[qualified_name] = yaml.load(file(os.path.join(root, f)))
 
 
-    def has_schematic(self, schematic):
-        if self.schematics.has_key(schematic):
-            return self.schematics[schematic]
-        return None
-
     def __str__(self):
         return "FileCatalog(%s)" % self.uri
+
+
+class GitCatalog(FileCatalog):
+    def load(self):
+        repo_dir = os.path.join(CACHE_DIR, 'repos')
+        repo = re.match('git:\/\/(.*)\/(.*)\.git', self.uri).group(2)
+        full_path = os.path.join(repo_dir, repo)
+        if os.path.isdir(full_path):
+            read_pipe('git', os.popen('cd %s && git pull --rebase' % full_path))
+        else:
+            read_pipe('git',
+                    os.popen('cd %s && git clone --depth 1 %s' % (repo_dir, self.uri)))
+        self.uri = ''.join(['file://', full_path])
+        return super(GitCatalog, self).load()
+
 
 def install():
     if not os.path.isfile('schematics.yaml'):
@@ -129,7 +146,11 @@ def install():
 
     catalogs = []
     for catalog in schematics['catalogs']:
-        c = FileCatalog(catalog)
+        c = None
+        if re.match('file:\/\/', catalog):
+            c = FileCatalog(catalog)
+        elif re.match('git:\/\/', catalog):
+            c = GitCatalog(catalog)
         c.load()
         catalogs.append(c)
 
@@ -137,6 +158,12 @@ def install():
     todo = {}
     dependencies = []
     for schematic in schematics['schematics']:
+        components = schematic.split('@')
+        version = None
+        schematic = components[0]
+        if len(components) == 2:
+            version = components[1]
+
         for catalog in catalogs:
             graph[schematic] = []
             s = catalog.has_schematic(schematic)
