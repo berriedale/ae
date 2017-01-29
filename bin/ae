@@ -25,7 +25,7 @@ def read_pipe(name, pipe):
         sys.stdout.flush()
 
 
-class SchematicHandler:
+class SchematicHandler(object):
     def __init__(self, schematic):
         self.schematic = schematic
         self.name = schematic['name']
@@ -33,25 +33,6 @@ class SchematicHandler:
     def bootstrap(self):
         if not os.path.isdir(CACHE_DIR):
             os.mkdir(CACHE_DIR)
-        return self
-
-    def checkout(self):
-        print '>> checkout'
-        url = self.schematic['source']['url']
-        branch = self.schematic['source']['ref'] or 'master'
-        repos_dir = os.path.join(CACHE_DIR, 'repos')
-        self.checkout_dir = os.path.join(repos_dir, self.name)
-
-        if not os.path.isdir(repos_dir):
-            os.mkdir(repos_dir)
-
-        if not os.path.isdir(self.checkout_dir):
-            command = "git clone --depth 1 %s %s" % (url, self.checkout_dir)
-        else:
-            command = "cd %s && git fetch" % (self.checkout_dir)
-
-        read_pipe(self.name, os.popen(command))
-        read_pipe(self.name, os.popen("cd %s && git checkout origin/%s" % (self.checkout_dir, branch)))
         return self
 
     def prepare(self):
@@ -77,6 +58,47 @@ class SchematicHandler:
             read_pipe(self.name,
                     os.popen("cd %s && %s" % (self.checkout_dir, s)))
 
+
+class GitSchematicHandler(SchematicHandler):
+    def checkout(self):
+        print '>> checkout'
+        url = self.schematic['source']['url']
+        branch = self.schematic['source']['ref'] or 'master'
+        repos_dir = os.path.join(CACHE_DIR, 'repos')
+        self.checkout_dir = os.path.join(repos_dir, self.name)
+
+        if not os.path.isdir(repos_dir):
+            os.mkdir(repos_dir)
+
+        if not os.path.isdir(self.checkout_dir):
+            command = "git clone --depth 1 %s %s" % (url, self.checkout_dir)
+        else:
+            command = "cd %s && git fetch" % (self.checkout_dir)
+
+        read_pipe(self.name, os.popen(command))
+        read_pipe(self.name, os.popen("cd %s && git checkout origin/%s" % (self.checkout_dir, branch)))
+        return self
+
+class FileSchematicHandler(SchematicHandler):
+    def checkout(self):
+        print '>> checkout'
+        url = self.schematic['source']['url']
+        repos_dir = os.path.join(CACHE_DIR, 'repos')
+        self.checkout_dir = os.path.join(repos_dir, self.name)
+
+        versions = self.schematic['source']['versions']
+        filename = versions[0]['filename']
+        url = versions[0]['url']
+
+        if not os.path.isdir(repos_dir):
+            os.mkdir(repos_dir)
+
+        if not os.path.isdir(self.checkout_dir):
+            if not os.path.isfile(os.path.join(repos_dir, filename)):
+                read_pipe(self.name, os.popen('cd %s && curl -s %s > %s' % (repos_dir, url, filename)))
+            command = 'cd %s && mkdir %s && tar -C %s --strip-components 1 -zxvf %s' % (repos_dir, self.name, self.name, filename)
+            read_pipe(self.name, os.popen(command))
+        return self
 
 def traverse_schematic_graph(graph, key=None):
     if not key:
@@ -138,7 +160,6 @@ class GitCatalog(FileCatalog):
         self.uri = ''.join(['file://', full_path])
         return super(GitCatalog, self).load()
 
-
 def install():
     if not os.path.isfile('schematics.yaml'):
         return 1
@@ -170,7 +191,11 @@ def install():
             if not s:
                 print "!!! Could not find schematic for %s !!!" % schematic
                 return 1
-            todo[schematic] = SchematicHandler(s)
+            todo[schematic] = None
+            if s['source']['scm'] == 'git':
+                todo[schematic] = GitSchematicHandler(s)
+            elif s['source']['scm'] == 'file':
+                todo[schematic] = FileSchematicHandler(s)
             depends = s['schematics'] or []
             graph[schematic].extend(depends)
             dependencies.extend(depends)
@@ -181,7 +206,11 @@ def install():
             if not s:
                 print "!!! Could not find schematic for %s !!!" % schematic
                 return 1
-            todo[schematic] = SchematicHandler(s)
+            todo[schematic] = None
+            if s['source']['scm'] == 'git':
+                todo[schematic] = GitSchematicHandler(s)
+            elif s['source']['scm'] == 'file':
+                todo[schematic] = FileSchematicHandler(s)
             depends = s['schematics'] or []
             for d in depends:
                 if not graph.has_key(d):
